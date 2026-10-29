@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leadwright — Employee Discovery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/web/styles.css?v=backfill2" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Leadwright</span>
+    </div>
+    <p class="brand-aside">Employee discovery from company websites</p>
+    <button type="button" class="resume-btn" id="resume-btn" hidden>Resume last job</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 class="hero-brand">Leadwright</h1>
+      <p class="hero-copy">
+        Upload a CSV of companies. We’ll find matching people via Apollo,
+        verify emails, and show clean leads here.
+      </p>
+
+      <form id="run-form" class="upload-panel">
+        <label class="dropzone" id="dropzone" for="csv-file">
+          <input id="csv-file" name="file" type="file" accept=".csv,text/csv" required />
+          <span class="dropzone-title">Drop your CSV here</span>
+          <span class="dropzone-sub">or click to browse · columns: <code>company_name</code>, <code>company_website</code> (website optional)</span>
+          <span class="file-name" id="file-name">No file selected</span>
+        </label>
+
+        <div class="controls">
+          <label>
+            Mode
+            <select name="pipeline_mode" id="pipeline_mode">
+              <option value="search_only_guess" selected>Search only + email guess (0 enrich credits)</option>
+              <option value="search_and_enrich">Search + Apollo emails (uses credits)</option>
+            </select>
+          </label>
+          <label>
+            Max Apollo pages / company
+            <input type="number" name="max_pages" id="max_pages" min="1" max="1000" value="1" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="skip_existing_people" name="skip_existing_people" checked />
+            <span>New people only (skip contacts already in DB)</span>
+          </label>
+        </div>
+
+        <p class="roles-note">
+          Searching these titles from <code>.env</code>:
+          <strong id="active-titles-label">loading…</strong>
+        </p>
+        <p class="hint" id="mode-hint">
+          Search-only: Apollo finds people (0 credits), then guesses emails like
+          <code>first.last@domain</code>. Use website when you have it; otherwise
+          we search by <code>company_name</code>. Export <code>company_name</code>
+          comes from Apollo only (CSV name is lookup reference). Turn on
+          <strong>New people only</strong> to omit contacts already stored from
+          earlier batches. ZeroBounce is off.
+        </p>
+
+        <button type="submit" class="cta" id="submit-btn">Find people</button>
+        <p class="hint">Quick mode: up to 500 companies per run (QUICK_RUN_MAX_COMPANIES). Large CSVs run slower in this process.</p>
+      </form>
+    </section>
+
+    <section class="status-panel" id="status-panel" hidden>
+      <div class="status-head">
+        <h2>Run status</h2>
+        <span class="pill" id="status-pill">idle</span>
+      </div>
+      <div class="meter" aria-hidden="true"><div class="meter-fill" id="meter-fill"></div></div>
+      <p class="status-text" id="status-text">Waiting…</p>
+      <dl class="stats" id="stats"></dl>
+    </section>
+
+    <section class="backfill-panel" id="backfill-panel">
+      <h2>Fill company names (0 credits)</h2>
+      <p class="hint">
+        Upload an <code>accepted_contacts.csv</code> export. We’ll look up each person via Apollo
+        Search and set <code>company_name</code> from Apollo’s organization name — no enrichment credits.
+      </p>
+      <form id="backfill-form" class="upload-panel compact">
+        <label class="dropzone compact" id="backfill-dropzone" for="backfill-file">
+          <input id="backfill-file" name="backfill_file" type="file" accept=".csv,text/csv" />
+          <span class="dropzone-title">Drop accepted_contacts.csv</span>
+          <span class="dropzone-sub">or click to browse</span>
+          <span class="file-name" id="backfill-file-name">No file selected</span>
+        </label>
+        <div class="controls">
+          <label>
+            Max Apollo pages / domain
+            <input type="number" id="backfill_max_pages" min="1" max="50" value="5" />
+          </label>
+        </div>
+        <button type="submit" class="cta secondary" id="backfill-btn">Fill company names</button>
+        <p class="hint" id="backfill-status">Select a CSV, then click Fill company names.</p>
+        <div class="backfill-progress" id="backfill-progress" hidden>
+          <div class="meter" aria-hidden="true"><div class="meter-fill" id="backfill-meter-fill"></div></div>
+          <p class="status-text" id="backfill-progress-text">Waiting…</p>
+          <dl class="stats" id="backfill-stats"></dl>
+        </div>
+      </form>
+    </section>
+
+    <section class="backfill-panel" id="enrich-panel">
+      <h2>Fill names + emails (uses credits)</h2>
+      <p class="hint">
+        Upload the same <code>accepted_contacts.csv</code>. Apollo Enrichment corrects
+        <code>employee_name</code> and <code>email</code>.
+        <strong>Important:</strong> Apollo’s <code>has_email</code> flag is not the same as a usable
+        email — enrich can still return <code>unavailable</code> and charge a credit.
+        With the filter on, we only enrich people Search lists as
+        <code>contact_email_status=verified</code>. Progress is checkpointed after every person.
+      </p>
+      <form id="enrich-form" class="upload-panel compact">
+        <label class="dropzone compact" id="enrich-dropzone" for="enrich-file">
+          <input id="enrich-file" name="enrich_file" type="file" accept=".csv,text/csv" />
+          <span class="dropzone-title">Drop accepted_contacts.csv</span>
+          <span class="dropzone-sub">or click to browse</span>
+          <span class="file-name" id="enrich-file-name">No file selected</span>
+        </label>
+        <div class="controls">
+          <label>
+            Max people to attempt
+            <input type="number" id="enrich_max_people" min="1" max="10000" value="3500" />
+            <span class="field-hint">Pool size from your CSV (not upload row limit)</span>
+          </label>
+          <label>
+            Stop after valid emails
+            <input type="number" id="enrich_stop_after" min="0" max="10000" value="2500" />
+            <span class="field-hint">Verified email + full name. 0 = no early stop.</span>
+          </label>
+          <label>
+            Max Search pages / domain
+            <input type="number" id="enrich_max_pages" min="1" max="50" value="5" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="enrich_only_incomplete" checked />
+            Only incomplete names / guessed emails
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="enrich_only_has_email" checked />
+            Only enrich if Apollo Search lists verified email
+          </label>
+        </div>
+        <button type="submit" class="cta" id="enrich-btn">Fill names + emails</button>
+        <button type="button" class="cta secondary" id="enrich-resume-btn" hidden>Resume last enrich run</button>
+        <button type="button" class="cta secondary" id="enrich-download-btn" hidden>Download partial results</button>
+        <p class="hint" id="enrich-status">Select a CSV, then click Fill names + emails.</p>
+        <p class="hint" id="enrich-resume-hint" hidden></p>
+        <div class="backfill-progress" id="enrich-progress" hidden>
+          <div class="meter" aria-hidden="true"><div class="meter-fill" id="enrich-meter-fill"></div></div>
+          <p class="status-text" id="enrich-progress-text">Waiting…</p>
+          <dl class="stats" id="enrich-stats"></dl>
+        </div>
+      </form>
+    </section>
+
+    <section class="results" id="results" hidden>
+      <div class="results-head">
+        <h2>Results</h2>
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" data-tab="guessed">Guessed emails</button>
+          <button type="button" class="tab" data-tab="accepted">Accepted</button>
+          <button type="button" class="tab" data-tab="rejected">No guess / rejected</button>
+        </div>
+        <div class="export-links" id="export-links"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Name</th>
+              <th>Title</th>
+              <th>Email (primary guess)</th>
+              <th>Other guesses</th>
+              <th>Apollo</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Uses official Apollo &amp; email verification APIs — not website scraping.</span>
+    <a href="/docs">API docs</a>
+  </footer>
+
+  <script src="/web/app.js?v=titles9"></script>
+</body>
+</html>

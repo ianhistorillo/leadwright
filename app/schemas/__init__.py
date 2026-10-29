@@ -1,0 +1,1 @@
+"""Company schema package marker."""

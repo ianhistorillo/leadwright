@@ -1,0 +1,25 @@
+# Packages
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local databases and generated job output
+*.db
+data/output/*
+!data/output/.gitkeep

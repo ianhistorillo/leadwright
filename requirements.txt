@@ -1,0 +1,25 @@
+# Web framework
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.32.0,<1.0.0
+pydantic>=2.9.0,<3.0.0
+pydantic-settings>=2.6.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+python-multipart>=0.0.12,<1.0.0
+
+# Database (Phase 2+)
+SQLAlchemy>=2.0.36,<3.0.0
+alembic>=1.14.0,<2.0.0
+psycopg[binary]>=3.2.0,<4.0.0
+
+# HTTP / data
+httpx>=0.28.0,<1.0.0
+pandas>=2.2.0,<3.0.0
+
+# Background jobs (Phase 8+)
+celery[redis]>=5.4.0,<6.0.0
+redis>=5.2.0,<6.0.0
+
+# Testing
+pytest>=8.3.0,<9.0.0
+pytest-asyncio>=0.24.0,<1.0.0
+httpx>=0.28.0,<1.0.0
