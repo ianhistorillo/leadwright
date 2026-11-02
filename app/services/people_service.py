@@ -98,6 +98,10 @@ class PeopleService:
             titles=filters.job_titles,
             settings=self._settings,
         )
+        priority_titles = filters.priority_job_titles
+        if priority_titles is None:
+            priority_titles = list(self._settings.priority_job_titles)
+        title_batches = self._title_search_batches(job_titles, priority_titles)
 
         company.status = CompanyStatus.PROCESSING.value
         self._session.flush()
@@ -116,97 +120,105 @@ class PeopleService:
 
         try:
             name_search_fallback = False
-            for page in range(1, filters.max_pages + 1):
-                search_request = self._build_people_search_request(
-                    company,
-                    filters,
-                    job_titles,
-                    page=page,
-                    name_fallback=name_search_fallback,
-                )
-                logger.info(
-                    "apollo_people_search",
-                    extra={
-                        "company_id": company.id,
-                        "domain": company.domain,
-                        "lookup_name": company.lookup_name,
-                        "by_name": is_name_lookup_domain(company.domain),
-                        "name_fallback": name_search_fallback,
-                        "skip_existing_people": bool(filters.skip_existing_people),
-                        "page": page,
-                        "per_page": filters.per_page,
-                        "title_count": len(job_titles),
-                    },
-                )
-                try:
-                    response = await apollo.search_people(search_request)
-                except ApolloValidationError:
-                    if (
-                        page == 1
-                        and is_name_lookup_domain(company.domain)
-                        and not name_search_fallback
-                    ):
-                        # Official docs omit q_organization_name; fall back to keywords.
-                        name_search_fallback = True
-                        search_request = self._build_people_search_request(
-                            company,
-                            filters,
-                            job_titles,
-                            page=page,
-                            name_fallback=True,
-                        )
-                        logger.warning(
-                            "apollo_people_search_name_fallback",
-                            extra={"company_id": company.id, "lookup_name": company.lookup_name},
-                        )
-                        response = await apollo.search_people(search_request)
-                    else:
-                        raise
-                pages_fetched += 1
-                if total_entries is None:
-                    total_entries = response.total_entries
-
-                if not response.people:
-                    break
-
-                for result in response.people:
-                    if result is None or not result.id:
-                        skipped += 1
-                        continue
-                    if not self._title_matches_filters(
-                        result.title, job_titles, include_similar=filters.include_similar_titles
-                    ):
-                        skipped += 1
-                        continue
-                    person, action = self._upsert_search_result(
+            for batch_index, title_batch in enumerate(title_batches):
+                for page in range(1, filters.max_pages + 1):
+                    search_request = self._build_people_search_request(
                         company,
-                        result,
-                        skip_existing=bool(filters.skip_existing_people),
-                        source_job_id=filters.source_job_id,
+                        filters,
+                        title_batch,
+                        page=page,
+                        name_fallback=name_search_fallback,
                     )
-                    if action == "skipped_existing":
-                        skipped_existing += 1
-                        continue
-                    self._apply_apollo_company_from_search(company, result)
-                    discovered += 1
-                    if action == "created":
-                        created += 1
-                        touched.append(person)  # type: ignore[arg-type]
-                    elif action == "updated":
-                        updated += 1
-                        touched.append(person)  # type: ignore[arg-type]
-                    else:
-                        skipped += 1
+                    logger.info(
+                        "apollo_people_search",
+                        extra={
+                            "company_id": company.id,
+                            "domain": company.domain,
+                            "lookup_name": company.lookup_name,
+                            "by_name": is_name_lookup_domain(company.domain),
+                            "name_fallback": name_search_fallback,
+                            "skip_existing_people": bool(filters.skip_existing_people),
+                            "page": page,
+                            "per_page": filters.per_page,
+                            "title_count": len(title_batch),
+                            "priority_batch": batch_index == 0 and len(title_batches) > 1,
+                        },
+                    )
+                    try:
+                        response = await apollo.search_people(search_request)
+                    except ApolloValidationError:
+                        if (
+                            page == 1
+                            and is_name_lookup_domain(company.domain)
+                            and not name_search_fallback
+                        ):
+                            # Official docs omit q_organization_name; fall back to keywords.
+                            name_search_fallback = True
+                            search_request = self._build_people_search_request(
+                                company,
+                                filters,
+                                title_batch,
+                                page=page,
+                                name_fallback=True,
+                            )
+                            logger.warning(
+                                "apollo_people_search_name_fallback",
+                                extra={
+                                    "company_id": company.id,
+                                    "lookup_name": company.lookup_name,
+                                },
+                            )
+                            response = await apollo.search_people(search_request)
+                        else:
+                            raise
+                    pages_fetched += 1
+                    batch_total = response.total_entries
+                    if page == 1 and batch_total is not None:
+                        total_entries = (total_entries or 0) + batch_total
 
-                # Commit after each page so a crash mid-company keeps progress
-                # (Search is 0 credits; resume re-upserts safely).
-                self._session.commit()
+                    if not response.people:
+                        break
 
-                page_people = [p for p in response.people if p is not None]
-                if len(page_people) < filters.per_page:
-                    break
-                if total_entries is not None and page * filters.per_page >= total_entries:
-                    break
+                    for result in response.people:
+                        if result is None or not result.id:
+                            skipped += 1
+                            continue
+                        if not self._title_matches_filters(
+                            result.title,
+                            title_batch,
+                            include_similar=filters.include_similar_titles,
+                        ):
+                            skipped += 1
+                            continue
+                        person, action = self._upsert_search_result(
+                            company,
+                            result,
+                            skip_existing=bool(filters.skip_existing_people),
+                            source_job_id=filters.source_job_id,
+                        )
+                        if action == "skipped_existing":
+                            skipped_existing += 1
+                            continue
+                        self._apply_apollo_company_from_search(company, result)
+                        discovered += 1
+                        if action == "created":
+                            created += 1
+                            touched.append(person)  # type: ignore[arg-type]
+                        elif action == "updated":
+                            updated += 1
+                            touched.append(person)  # type: ignore[arg-type]
+                        else:
+                            skipped += 1
+
+                    # Commit after each page so a crash mid-company keeps progress
+                    # (Search is 0 credits; resume re-upserts safely).
+                    self._session.commit()
+
+                    page_people = [p for p in response.people if p is not None]
+                    if len(page_people) < filters.per_page:
+                        break
+                    if batch_total is not None and page * filters.per_page >= batch_total:
+                        break
 
             company.status = CompanyStatus.COMPLETED.value
             self._session.commit()
@@ -235,7 +247,7 @@ class PeopleService:
         return PersonSearchResponse(
             company_id=company.id,
             company_domain=company.domain,
-            job_titles_used=job_titles,
+            job_titles_used=[title for batch in title_batches for title in batch],
             apollo_total_entries=total_entries,
             pages_fetched=pages_fetched,
             discovered=discovered,
@@ -606,6 +618,30 @@ class PeopleService:
             changed = True
 
         return existing, "updated" if changed else "skipped"
+
+    @staticmethod
+    def _title_search_batches(
+        job_titles: list[str],
+        priority_titles: list[str] | None,
+    ) -> list[list[str]]:
+        """Search priority titles first, then the remaining titles.
+
+        An empty priority list keeps the original single search.
+        """
+        priority = [title.strip() for title in (priority_titles or []) if title and title.strip()]
+        if not priority:
+            return [job_titles]
+
+        active = {title.lower() for title in job_titles}
+        priority_keys = {title.lower() for title in priority}
+        first = [title for title in priority if title.lower() in active]
+        rest = [title for title in job_titles if title.lower() not in priority_keys]
+        batches: list[list[str]] = []
+        if first:
+            batches.append(first)
+        if rest:
+            batches.append(rest)
+        return batches or [job_titles]
 
     @staticmethod
     def _title_matches_filters(

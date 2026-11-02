@@ -53,6 +53,13 @@ class Settings(BaseSettings):
             "VP Marketing",
         ]
     )
+    priority_job_titles: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subset of titles searched before the rest of TARGET_JOB_TITLES. "
+            "Empty keeps a single combined search."
+        ),
+    )
 
     max_upload_size_mb: int = 10
     cors_origins: list[str] = Field(

@@ -379,6 +379,11 @@ class JobService:
         search_request = PersonSearchRequest(
             job_title_profile=options.get("job_title_profile"),
             job_titles=options.get("job_titles"),
+            priority_job_titles=(
+                options.get("priority_job_titles")
+                if "priority_job_titles" in options
+                else None
+            ),
             contact_email_status=options.get("contact_email_status"),
             include_similar_titles=bool(
                 options.get("include_similar_titles", False)

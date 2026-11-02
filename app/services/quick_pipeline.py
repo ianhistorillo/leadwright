@@ -113,10 +113,16 @@ class QuickPipelineService:
         resolved_titles = resolve_job_titles(
             job_title_profile, settings=self._settings
         )
+        priority_titles = [
+            title.strip()
+            for title in self._settings.priority_job_titles
+            if title and title.strip()
+        ]
         options = {
             "job_title_profile": job_title_profile,
             # Snapshotted at start — used by the worker even if .env changes mid-run.
             "job_titles": resolved_titles,
+            "priority_job_titles": priority_titles,
             "max_pages": max_pages,
             "run_external_verification": verify,
             "pipeline_mode": mode,
@@ -132,6 +138,7 @@ class QuickPipelineService:
                 "job_id": job.id,
                 "job_title_profile": job_title_profile,
                 "job_titles": resolved_titles,
+                "priority_job_titles": priority_titles,
             },
         )
         entity = self._jobs.get_job(job.id)

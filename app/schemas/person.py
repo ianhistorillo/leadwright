@@ -45,6 +45,10 @@ class PersonSearchRequest(BaseModel):
         default=None,
         description="Explicit title override; wins over profile/settings",
     )
+    priority_job_titles: list[str] | None = Field(
+        default=None,
+        description="Titles searched first. Remaining job titles are searched after.",
+    )
     person_seniorities: list[str] | None = Field(
         default=None,
         description="Apollo seniorities: owner, founder, c_suite, partner, vp, head, ...",
